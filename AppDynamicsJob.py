@@ -9,63 +9,77 @@ import unittest, time, re
 from bip_utils import Bip39WordsNum, Bip39MnemonicGenerator
 from random import choice
 from json import loads
-from requests import get
+from requests import get, Session
 from os import path, getcwd, system
 from time import sleep
 from loguru import logger
-from multiprocessing.dummy import Pool
+from pyuseragents import random as random_useragent
+import cloudscraper
 
 
 class AppDynamicsJob(unittest.TestCase):
     def setUp(self):
-        # AppDynamics will automatically override this web driver
-        # as documented in https://docs.appdynamics.com/display/PRO44/Write+Your+First+Script
         EXTENSION_PATH = 'metamask.crx'
         opt = webdriver.ChromeOptions()
         opt.add_extension(EXTENSION_PATH)
+        opt.add_argument('--disable-infobars')
         opt.add_experimental_option('prefs', {'intl.accept_languages': 'en,en_US'})
-        #opt.headless = True
+        opt.add_argument("--mute-audio")
         self.driver = webdriver.Chrome(chrome_options=opt)
         self.driver.implicitly_wait(30)
         self.base_url = "https://www.google.com/"
         self.verificationErrors = []
         self.accept_next_alert = True
 
-    def get_username(self, length):
-        usernames = []
+    def creat_mail(self):
+        session = Session()
+        session.headers.update({'user-agent': random_useragent(), 'Accept': 'application/json, text/plain, */*',
+                                'Referer': 'https://temprmail.com/'})
+        r = session.post('https://api.temprmail.com/v1/emails')
+        email = loads(r.text)['email']
+        checkmailsurl = loads(r.text)['emails_json_url']
+        return email, checkmailsurl
 
-        while len(usernames) < length:
-            try:
-                r = get('https://story-shack-cdn-v2.glitch.me/generators/username-generator')
-                usernames.append(loads(r.text)['data']['name'])  # + "".join(
-                    #[choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ013456789") for _ in range(5)]))
-
-            except:
-                pass
-
-        return (usernames)
-
-    def verf_mail(self, login):
-        while True:
-            r = get(f'https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain=1secmail.org')
-            if len(loads(r.text)) >= 1:
-                text = loads(r.text)[0]["id"]
-                g = get(
-                    f'https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain=1secmail.org&id={text}')
-                text = loads(g.text)['textBody'].split(':')
-                text = 'https:' + text[2]
-                return text
+    def check_mail(self, check):
+        session = Session()
+        session.headers.update({'user-agent': random_useragent(), 'Accept': 'application/json, text/plain, */*',
+                                'Referer': 'https://temprmail.com/'})
+        scraper = cloudscraper.create_scraper()
+        scraper.headers.update({'Content-Type': 'application/json', 'cf-visitor': 'https',
+                                'User-Agent': 'Legion/5.2 CFNetwork/1209 Darwin/20.2.0', 'Connection': 'keep-alive',
+                                'Accept': 'application/json, text/plain, */*', 'Accept-Language': 'ru',
+                                'x-forwarded-proto': 'https', 'Accept-Encoding': 'gzip, deflate, br'})
+        for i in range(15):
+            r = scraper.get(check)
+            if 'Email Verification' in r.text:
+                msgid = loads(r.text)[0]['hash_id']
+                break
             else:
-                sleep(2)
-
+                if i == 14:
+                    return 'https://myria.com'
+                else:
+                    sleep(3)
+        r = session.get(f'https://tempremail-assets.s3.us-east-1.amazonaws.com/emails/{msgid}.json')
+        text = loads(r.text)['message'].split('<a href="')[1]
+        num = text.find('"')
+        url = text[0:num]
+        return url
 
     def test_app_dynamics_job(self):
+        referal = 'https://myria.com/sigil/?code=b41b6bb8-87cb-4ff6-9ed7-97a7b16245cb'
         mnemonic = Bip39MnemonicGenerator().FromWordsNumber(Bip39WordsNum.WORDS_NUM_12)
-        username = self.get_username(4)
+
+        username1 = 'F' + "".join([choice("abcdefghijklmnopqrstuvwxyz") for _ in range(7)])
+        username2 = 'E' + "".join([choice("abcdefghijklmnopqrstuvwxyz") for _ in range(7)])
+        username3 = 'C' + "".join([choice("abcdefghijklmnopqrstuvwxyz") for _ in range(7)])
+
+        mail, chekmail = self.creat_mail()
         account_password = \
-            "".join([choice("abcdefghijklmnopqrstuvwxyz013456789") for _ in range(15)]) \
-            + "".join([choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ') for _ in range(15)]) + '@'
+            "".join([choice("abcdefghijklmnopqrstuvwxyz") for _ in range(5)]) \
+            + "".join([choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ') for _ in range(5)]) + '@' \
+            + "".join([choice('0123456789') for _ in range(3)])
         driver = self.driver
+
         driver.switch_to.window(driver.window_handles[1])
 
         # Register Metamask
@@ -87,7 +101,7 @@ class AppDynamicsJob(unittest.TestCase):
 
         # Register myria.com
 
-        driver.get("https://myria.com/sigil/?code=6cd9b69a-5782-48c7-861e-708db71e6b9d")
+        driver.get(referal)
         driver.find_element_by_xpath('//*[@id="__next"]/div[2]/div/div/div[2]/div[2]/div/div[1]/div/div/button').click()
         driver.execute_script("window.open('about:blank', 'secondtab');")
         driver.switch_to.window("secondtab")
@@ -111,13 +125,13 @@ class AppDynamicsJob(unittest.TestCase):
             "//div[@id='__next']/div[2]/div/div/div[2]/div[2]/div/div/div/div/div[2]/div[2]/div/div[2]/"
             "div/div/div[2]/div/div[2]/a/div/div").click()
         driver.find_element_by_name("firstName").click()
-        driver.find_element_by_name("firstName").send_keys(username[0])
+        driver.find_element_by_name("firstName").send_keys(username1)
         driver.find_element_by_name("lastName").click()
-        driver.find_element_by_name("lastName").send_keys(username[1])
+        driver.find_element_by_name("lastName").send_keys(username2)
         driver.find_element_by_name("username").click()
-        driver.find_element_by_name("username").send_keys(f'{username[2]}@1')
+        driver.find_element_by_name("username").send_keys(username3)
         driver.find_element_by_name("email").click()
-        driver.find_element_by_name("email").send_keys(f'{username[3]}@1secmail.org')
+        driver.find_element_by_name("email").send_keys(mail)
         driver.find_element_by_name("password").click()
         driver.find_element_by_name("password").send_keys(account_password)
         driver.find_element_by_name("confirmPassword").clear()
@@ -126,19 +140,18 @@ class AppDynamicsJob(unittest.TestCase):
         read_mores = driver.find_elements_by_xpath('//*[@id="radix-1"]/div/div[2]/form/button')
         for read_more in read_mores:
             driver.execute_script("arguments[0].scrollIntoView();", read_more)
-        print(username[3])
         sleep(1)
         driver.find_element_by_xpath('//*[@id="radix-1"]/div/div[2]/form/button').click()
-        with open('email.txt', 'a', encoding='utf-8') as file:
-            login = username[3]
-            file.write(f'{login}\n')
-            logger.success('The work has been successfully completed')
-        driver.get(self.verf_mail(username[3]))
+        driver.get(self.check_mail(chekmail))
+        if len(self.check_mail(chekmail)) > 17:
+            with open('s4et.txt', 'r') as a:
+                f_contents = a.read()
+            s = int(f_contents) + 20
+            s = str(s)
+            with open('s4et.txt', 'w') as f:
+                f.write(s)
         sleep(2)
-        with open('email.txt', 'a', encoding='utf-8') as file:
-            login = username[3]
-            file.write(f'{login}  ++\n')
-            logger.success('The work has been successfully completed')
+
 
 
 
